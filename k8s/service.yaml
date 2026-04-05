@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: monitor-app
+  namespace: default
+  labels:
+    app: monitor-app
+spec:
+  selector:
+    app: monitor-app
+  ports:
+    - name: http
+      port: 80
+      targetPort: 3000
+  type: ClusterIP
