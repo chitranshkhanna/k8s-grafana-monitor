@@ -1,0 +1,83 @@
+pipeline {
+  agent any
+
+  environment {
+    IMAGE_NAME = "monitor-app"
+    IMAGE_TAG  = "1.0"
+  }
+
+  stages {
+
+    stage('Checkout') {
+      steps {
+        echo 'Cloning repository...'
+        checkout scm
+      }
+    }
+
+    stage('Install dependencies') {
+      steps {
+        dir('app') {
+          sh 'npm install'
+        }
+      }
+    }
+
+    stage('Run tests') {
+      steps {
+        dir('app') {
+          sh 'npm test'
+        }
+      }
+    }
+
+    stage('Build Docker image') {
+      steps {
+        sh '''
+          eval $(minikube docker-env)
+          docker build -t ${IMAGE_NAME}:${IMAGE_TAG} ./app
+        '''
+      }
+    }
+
+    stage('Deploy to Kubernetes') {
+      steps {
+        sh '''
+          kubectl apply -f k8s/configmap.yaml
+          kubectl apply -f k8s/deployment.yaml
+          kubectl apply -f k8s/service.yaml
+          kubectl apply -f k8s/hpa.yaml
+          kubectl rollout status deployment/monitor-app --timeout=90s
+        '''
+      }
+    }
+
+    stage('Apply monitoring config') {
+      steps {
+        sh '''
+          kubectl apply -f k8s/servicemonitor.yaml
+          kubectl apply -f prometheus/alert-rules.yaml
+        '''
+      }
+    }
+
+    stage('Health check') {
+      steps {
+        sh '''
+          sleep 10
+          kubectl get pods -l app=monitor-app
+          kubectl get hpa monitor-app-hpa
+        '''
+      }
+    }
+  }
+
+  post {
+    success {
+      echo 'Pipeline succeeded. App deployed and monitored.'
+    }
+    failure {
+      echo 'Pipeline failed. Check logs above.'
+    }
+  }
+}
